@@ -1,0 +1,26 @@
+%% Vue reseau — exposition AVANT / APRES durcissement (Reverse proxy Traefik / AlmaLinux 10)
+flowchart LR
+    classDef open fill:#f3d2d2,stroke:#b71c1c,color:#3a0000;
+    classDef keep fill:#cfe8cf,stroke:#2e7d32,color:#1b3a1b;
+    classDef local fill:#f3ead2,stroke:#8a6d00,color:#3a2f00;
+    classDef filt fill:#cfe0f3,stroke:#1565c0,color:#0d2a4a;
+
+    NET(("Reseau")):::filt
+
+    subgraph BEFORE["AVANT — 9 ports exposes"]
+        BA["21 FTP / 22 SSH / 80 HTTP
+        443 HTTPS / 8080 dashboard insecure
+        9090 cockpit / 631 cups
+        5353 avahi / 323 ntp"]:::open
+    end
+
+    subgraph AFTER["APRES — surface minimale"]
+        A80["80/tcp Traefik — ouvert, redirige vers 443"]:::keep
+        A443["443/tcp Traefik — ouvert (HTTPS, TLS)"]:::keep
+        A22["22/tcp SSH — filtre (192.168.5.0/24)"]:::filt
+        ALOOP["chronyd + backend demo — 127.0.0.1 uniquement"]:::local
+        AX["8080 / 9090 / 21 / 631 / 5353 — fermes"]:::keep
+    end
+
+    NET --> BEFORE
+    NET -->|"firewalld : http https + SSH LAN"| AFTER

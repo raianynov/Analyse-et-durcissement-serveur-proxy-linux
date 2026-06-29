@@ -1,0 +1,25 @@
+%% Vue services — necessaires / inutiles / a corriger (Reverse proxy Traefik / AlmaLinux 10)
+flowchart TB
+    classDef keep fill:#cfe8cf,stroke:#2e7d32,color:#1b3a1b;
+    classDef drop fill:#f3d2d2,stroke:#b71c1c,color:#3a0000;
+    classDef fix fill:#f3ead2,stroke:#8a6d00,color:#3a2f00;
+
+    subgraph NEED["Necessaires (conserver et durcir)"]
+        S22["SSH 22 - administration"]:::keep
+        S80["Traefik 80 - entree web (redirige vers 443)"]:::keep
+        S443["Traefik 443 - entree HTTPS (terminaison TLS)"]:::keep
+        SNTP["chronyd 323 - NTP (deja en 127.0.0.1)"]:::keep
+    end
+
+    subgraph FIXME["A corriger (defaut de configuration)"]
+        DASH["Dashboard Traefik 8080 - api insecure, HTTP clair, sans auth"]:::fix
+        ROOT["Traefik execute en root, sans cloisonnement"]:::fix
+        TLS["443 ouvert mais dynamic.yml absent (ne sert rien)"]:::fix
+    end
+
+    subgraph USELESS["Inutiles (desactiver / supprimer)"]
+        FTP["vsftpd 21 - FTP"]:::drop
+        CUPS["cups 631 - impression"]:::drop
+        AVAHI["avahi-daemon 5353 - mDNS"]:::drop
+        COCKPIT["cockpit 9090 - administration web"]:::drop
+    end

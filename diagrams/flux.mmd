@@ -1,0 +1,24 @@
+%% Flux d'une requete apres durcissement (Reverse proxy Traefik / AlmaLinux 10)
+sequenceDiagram
+    autonumber
+    participant C as Client / Admin
+    participant FW as firewalld (http https + SSH LAN)
+    participant T as Traefik (svc-traefik, 80/443)
+    participant MW as Middlewares (lan-only, basicAuth, TLS)
+    participant S as Service amont (demo 127.0.0.1:8088)
+    participant F2B as fail2ban (jail traefik-auth)
+
+    C->>FW: HTTP 80 / HTTPS 443 / SSH 22
+    Note over FW: Autorises : 80 et 443 (tous),<br/>22 (192.168.5.0/24)<br/>Tout le reste : refuse
+    FW->>T: Requete web autorisee (80 -> redirige 443)
+    T->>MW: Terminaison TLS (edge.crt), application des middlewares
+    Note over MW: Dashboard : LAN only + Basic Auth<br/>Service : Basic Auth + en-tetes securises
+    alt Authentification reussie
+        MW->>S: Requete routee vers le service amont
+        S-->>C: Reponse HTTPS (200)
+    else Authentification echouee (401)
+        MW-->>C: 401 Unauthorized
+        MW->>F2B: Ligne 401 ecrite dans l'access.log
+        Note over F2B: Au-dela de 4 echecs / 600 s<br/>bannissement de l'IP (1 h) via firewalld
+    end
+    Note over T: Traefik non-root, cloisonne (systemd)<br/>API insecure desactivee (plus de port 8080)
