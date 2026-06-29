@@ -32,9 +32,22 @@ Chaque mesure suit la structure : état initial, mesures appliquées, vérificat
 (avec la sortie réelle relevée), état final. La cible est AlmaLinux 10.2 (systemd,
 firewalld, SELinux enforcing). Avant toute action, un instantané de la machine
 virtuelle est réalisé ; après chaque étape, le fonctionnement du reverse proxy est
-contrôlé. L'accès s'effectue par SSH (`admin@192.168.5.131`) ou par la console de
-la machine virtuelle. Les mots de passe indiqués sont des placeholders
-(`<MDP_DASHBOARD>`, etc.) à remplacer par des mots de passe forts.
+contrôlé. L'accès s'effectue par SSH (`admin@<IP_SERVEUR>`) ou par la console de
+la machine virtuelle.
+
+Les valeurs propres à l'environnement sont représentées par des paramètres à
+substituer avant exécution :
+
+| Paramètre | Signification |
+|---|---|
+| `<IP_SERVEUR>` | Adresse IP de la machine durcie (le reverse proxy) |
+| `<RESEAU_ADMIN>` | Réseau d'administration autorisé, en notation CIDR (ex. `a.b.c.0/24`) |
+| `<IP_ADMIN>` | Adresse IP du poste d'administration (client SSH) |
+| `<IP_TESTEE>` | Adresse IP utilisée pour éprouver le bannissement fail2ban |
+| `<MDP_DASHBOARD>` | Mot de passe du tableau de bord, à définir fort |
+
+Les mots de passe et adresses indiqués étant des paramètres, ils sont à remplacer par
+les valeurs réelles de l'environnement cible.
 
 État de référence des ports avant durcissement (`sudo ss -tulpn`) :
 
@@ -67,7 +80,7 @@ tcp  *:80    LISTEN  traefik
 tcp  *:443   LISTEN  traefik
 tcp  *:8080  LISTEN  traefik
 
-$ curl -s -o /dev/null -w "HTTP %{http_code}\n" http://192.168.5.131:8080/dashboard/
+$ curl -s -o /dev/null -w "HTTP %{http_code}\n" http://<IP_SERVEUR>:8080/dashboard/
 HTTP 200
 ```
 
@@ -116,7 +129,7 @@ htpasswd -nbB admin '<MDP_DASHBOARD>'
 3. Création de la configuration dynamique manquante `/etc/traefik/dynamic.yml` :
    terminaison TLS avec le certificat `edge.crt`, options TLS modernes (TLS 1.2
    minimum), routeur du dashboard (`api@internal`) protégé par trois middlewares
-   (restriction au LAN `192.168.5.0/24`, authentification, en-têtes de sécurité), et
+   (restriction au LAN `<RESEAU_ADMIN>`, authentification, en-têtes de sécurité), et
    routeur de démonstration vers un backend local. Les `$` du hash sont doublés
    (`$$`) pour ne pas être interprétés comme des variables.
 
@@ -135,7 +148,7 @@ http:
       ipAllowList:
         sourceRange:
           - 127.0.0.1/32
-          - 192.168.5.0/24
+          - <RESEAU_ADMIN>
     dashboard-auth:
       basicAuth:
         users:
@@ -226,28 +239,28 @@ tcp  *:80   LISTEN  traefik
 tcp  *:443  LISTEN  traefik
 (plus de port 8080)
 
-$ curl -s -o /dev/null -w "HTTP %{http_code}\n" --max-time 5 http://192.168.5.131:8080/dashboard/
+$ curl -s -o /dev/null -w "HTTP %{http_code}\n" --max-time 5 http://<IP_SERVEUR>:8080/dashboard/
 HTTP 000   (connexion refusée)
 
-$ curl -s -o /dev/null -w "HTTP %{http_code} -> %{redirect_url}\n" http://192.168.5.131/
-HTTP 301 -> https://192.168.5.131/
+$ curl -s -o /dev/null -w "HTTP %{http_code} -> %{redirect_url}\n" http://<IP_SERVEUR>/
+HTTP 301 -> https://<IP_SERVEUR>/
 
-$ curl -sk -o /dev/null -w "HTTP %{http_code}\n" https://192.168.5.131/
+$ curl -sk -o /dev/null -w "HTTP %{http_code}\n" https://<IP_SERVEUR>/
 HTTP 200
 
-$ curl -sk -o /dev/null -w "HTTP %{http_code}\n" https://192.168.5.131/dashboard/
+$ curl -sk -o /dev/null -w "HTTP %{http_code}\n" https://<IP_SERVEUR>/dashboard/
 HTTP 401
 
-$ curl -sk -u admin:'<MDP_DASHBOARD>' -o /dev/null -w "HTTP %{http_code}\n" https://192.168.5.131/dashboard/
+$ curl -sk -u admin:'<MDP_DASHBOARD>' -o /dev/null -w "HTTP %{http_code}\n" https://<IP_SERVEUR>/dashboard/
 HTTP 200
 
-$ curl -sk -u admin:'<MDP_DASHBOARD>' https://192.168.5.131/ | grep -i "démonstration"
+$ curl -sk -u admin:'<MDP_DASHBOARD>' https://<IP_SERVEUR>/ | grep -i "démonstration"
   <h1>Service de démonstration</h1>
 ```
 
 **État final.** Le port 8080 est fermé. Le dashboard n'est plus accessible qu'en
 HTTPS, derrière une authentification, et uniquement depuis le réseau
-192.168.5.0/24. Le trafic HTTP est redirigé vers HTTPS. Le port 443 est désormais
+<RESEAU_ADMIN>. Le trafic HTTP est redirigé vers HTTPS. Le port 443 est désormais
 fonctionnel : terminaison TLS et routage vers un service réel. Le reverse proxy
 remplit effectivement son rôle.
 
@@ -296,9 +309,9 @@ $ sudo ss -tulpn | grep traefik
 tcp  *:80   LISTEN  traefik (pid=3170)
 tcp  *:443  LISTEN  traefik (pid=3170)
 
-$ curl -sk -o /dev/null -w "HTTP %{http_code}\n" https://192.168.5.131/
+$ curl -sk -o /dev/null -w "HTTP %{http_code}\n" https://<IP_SERVEUR>/
 HTTP 200
-$ curl -sk -u admin:'<MDP_DASHBOARD>' -o /dev/null -w "HTTP %{http_code}\n" https://192.168.5.131/dashboard/
+$ curl -sk -u admin:'<MDP_DASHBOARD>' -o /dev/null -w "HTTP %{http_code}\n" https://<IP_SERVEUR>/dashboard/
 HTTP 200
 ```
 
@@ -361,12 +374,6 @@ lecture seule hormis ses logs, appels système restreints à une liste blanche,
 mémoire non exécutable-inscriptible, isolation des périphériques et du noyau. Le
 service reste pleinement fonctionnel.
 
-**Limite.** Le contexte SELinux du process demeure `unconfined_service_t` : un
-confinement SELinux fin nécessiterait l'écriture d'une politique dédiée (le binaire
-résidant hors des emplacements standard couverts par la politique `targeted`), ce
-qui dépasse le périmètre du TP. L'isolation est néanmoins assurée par l'abandon des
-privilèges root (thème 2) et le cloisonnement systemd ci-dessus.
-
 ## Thème 4 — Suppression des services inutiles
 
 **État initial.** Quatre services sans rapport avec le rôle de reverse proxy étaient
@@ -420,7 +427,7 @@ tcp  127.0.0.1:8088  python3     (backend démo, loopback)
 tcp  *:80            traefik     (HTTP -> HTTPS)
 tcp  *:443           traefik     (HTTPS)
 
-$ curl -sk -o /dev/null -w "HTTP %{http_code}\n" https://192.168.5.131/
+$ curl -sk -o /dev/null -w "HTTP %{http_code}\n" https://<IP_SERVEUR>/
 HTTP 200
 ```
 
@@ -540,7 +547,7 @@ SSH global.
 
 1. Autoriser SSH uniquement depuis le réseau d'administration (rich rule) :
 ```bash
-sudo firewall-cmd --permanent --zone=public --add-rich-rule='rule family="ipv4" source address="192.168.5.0/24" service name="ssh" accept'
+sudo firewall-cmd --permanent --zone=public --add-rich-rule='rule family="ipv4" source address="<RESEAU_ADMIN>" service name="ssh" accept'
 sudo firewall-cmd --reload
 ```
 (Validation par ouverture d'une seconde session SSH avant de poursuivre.)
@@ -561,18 +568,18 @@ public (default, active)
   services: http https
   ports:    80/tcp 443/tcp
   rich rules:
-        rule family="ipv4" source address="192.168.5.0/24" service name="ssh" accept
+        rule family="ipv4" source address="<RESEAU_ADMIN>" service name="ssh" accept
 
-$ curl -s -o /dev/null -w "HTTP 80: %{http_code}\n" http://192.168.5.131/
+$ curl -s -o /dev/null -w "HTTP 80: %{http_code}\n" http://<IP_SERVEUR>/
 HTTP 80: 301
-$ curl -sk -o /dev/null -w "HTTPS 443: %{http_code}\n" https://192.168.5.131/
+$ curl -sk -o /dev/null -w "HTTPS 443: %{http_code}\n" https://<IP_SERVEUR>/
 HTTPS 443: 200
 ```
 La session SSH reste active (preuve que le port 22 demeure joignable depuis le LAN).
 
 **État final.** Le pare-feu n'autorise plus que le trafic web (80/443, services
 `http`/`https`) à toutes les sources, et SSH (port 22) uniquement depuis le réseau
-192.168.5.0/24. Le dashboard insecure (8080) et l'administration cockpit (9090) ne
+<RESEAU_ADMIN>. Le dashboard insecure (8080) et l'administration cockpit (9090) ne
 sont plus autorisés au niveau réseau, en cohérence avec la suppression des services
 correspondants.
 
@@ -593,7 +600,7 @@ mot de passe est désactivée.
    par l'OpenSSH récent d'AlmaLinux) et dépôt de la clé publique :
 ```powershell
 ssh-keygen -t ed25519 -f $env:USERPROFILE\.ssh\tp4_proxy -C "admin-tp4"
-type $env:USERPROFILE\.ssh\tp4_proxy.pub | ssh admin@192.168.5.131 "mkdir -p ~/.ssh && chmod 700 ~/.ssh && cat >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys"
+type $env:USERPROFILE\.ssh\tp4_proxy.pub | ssh admin@<IP_SERVEUR> "mkdir -p ~/.ssh && chmod 700 ~/.ssh && cat >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys"
 ```
 
 2. Création d'un raccourci de connexion dans `%USERPROFILE%\.ssh\config` sur le
@@ -601,7 +608,7 @@ type $env:USERPROFILE\.ssh\tp4_proxy.pub | ssh admin@192.168.5.131 "mkdir -p ~/.
    l'utilisateur étant mémorisés, la commande `ssh proxy-tp4` suffit) :
 ```
 Host proxy-tp4
-    HostName 192.168.5.131
+    HostName <IP_SERVEUR>
     User admin
     IdentityFile ~/.ssh/tp4_proxy
     IdentitiesOnly yes
@@ -636,13 +643,13 @@ x11forwarding no
 maxauthtries 3
 
 $ sudo journalctl -u sshd | grep "Accepted" | tail -1
-Accepted publickey for admin from 192.168.5.1 port 3592 ssh2: ED25519 SHA256:...
+Accepted publickey for admin from <IP_ADMIN> port 3592 ssh2: ED25519 SHA256:...
 
 # Depuis le poste d'administration :
-PS> ssh -o PubkeyAuthentication=no -o PreferredAuthentications=password admin@192.168.5.131 "echo test"
-admin@192.168.5.131: Permission denied (publickey,gssapi-keyex,gssapi-with-mic).
+PS> ssh -o PubkeyAuthentication=no -o PreferredAuthentications=password admin@<IP_SERVEUR> "echo test"
+admin@<IP_SERVEUR>: Permission denied (publickey,gssapi-keyex,gssapi-with-mic).
 
-PS> ssh -i $env:USERPROFILE\.ssh\tp4_proxy admin@192.168.5.131 "echo cle-ok"
+PS> ssh -i $env:USERPROFILE\.ssh\tp4_proxy admin@<IP_SERVEUR> "echo cle-ok"
 cle-ok
 
 PS> ssh proxy-tp4 "echo cle-ok"
@@ -693,13 +700,14 @@ ignoreregex =
 ```
 
 4. Configuration des jails (`/etc/fail2ban/jail.local`) : durcissement de `sshd`
-   (backend systemd) et activation de la jail `traefik-auth` (backend fichier) :
+   (backend `systemd`, lecture du journal) et activation de la jail `traefik-auth`
+   (backend `polling`, lecture du fichier d'accès) :
 ```
 [DEFAULT]
 bantime  = 3600
 findtime = 600
 maxretry = 4
-ignoreip = 127.0.0.1/8 192.168.5.0/24
+ignoreip = 127.0.0.1/8 <RESEAU_ADMIN>
 
 [sshd]
 enabled = true
@@ -711,6 +719,7 @@ bantime = 3600
 enabled = true
 filter  = traefik-custom
 logpath = /var/log/traefik/access.log
+backend = polling
 maxretry = 4
 bantime = 3600
 ```
@@ -734,11 +743,11 @@ Status for the jail: traefik-auth
 |  `- File list:        /var/log/traefik/access.log
 `- Actions
    |- Currently banned: 1
-   `- Banned IP list:   192.168.5.99
+   `- Banned IP list:   <IP_TESTEE>
 
-$ sudo firewall-cmd --list-rich-rules | grep 192.168.5.99
-rule family="ipv4" source address="192.168.5.99" port port="https" protocol="tcp" reject
-rule family="ipv4" source address="192.168.5.99" port port="http" protocol="tcp" reject
+$ sudo firewall-cmd --list-rich-rules | grep <IP_TESTEE>
+rule family="ipv4" source address="<IP_TESTEE>" port port="https" protocol="tcp" reject
+rule family="ipv4" source address="<IP_TESTEE>" port port="http" protocol="tcp" reject
 ```
 
 **État final.** Deux jails opérationnelles : `sshd` (durcie, `maxretry` ramené de 50
@@ -767,15 +776,15 @@ tcp  LISTEN  0.0.0.0:22   sshd
 tcp  LISTEN  *:443        traefik
 tcp  LISTEN  *:80         traefik
 
-$ curl -s  -o /dev/null -w "HTTP 80 (redirect): %{http_code}\n"  http://192.168.5.131/
+$ curl -s  -o /dev/null -w "HTTP 80 (redirect): %{http_code}\n"  http://<IP_SERVEUR>/
 HTTP 80 (redirect): 301
-$ curl -sk -o /dev/null -w "HTTPS demo sans auth: %{http_code}\n" https://192.168.5.131/
+$ curl -sk -o /dev/null -w "HTTPS demo sans auth: %{http_code}\n" https://<IP_SERVEUR>/
 HTTPS demo sans auth: 401
-$ curl -sk -u admin:<MDP> -o /dev/null -w "HTTPS demo avec auth: %{http_code}\n" https://192.168.5.131/
+$ curl -sk -u admin:<MDP> -o /dev/null -w "HTTPS demo avec auth: %{http_code}\n" https://<IP_SERVEUR>/
 HTTPS demo avec auth: 200
-$ curl -sk -u admin:<MDP> -o /dev/null -w "Dashboard avec auth: %{http_code}\n" https://192.168.5.131/dashboard/
+$ curl -sk -u admin:<MDP> -o /dev/null -w "Dashboard avec auth: %{http_code}\n" https://<IP_SERVEUR>/dashboard/
 Dashboard avec auth: 200
-$ curl -sk -o /dev/null -w "Dashboard sans auth: %{http_code}\n" https://192.168.5.131/dashboard/
+$ curl -sk -o /dev/null -w "Dashboard sans auth: %{http_code}\n" https://<IP_SERVEUR>/dashboard/
 Dashboard sans auth: 401
 ```
 
