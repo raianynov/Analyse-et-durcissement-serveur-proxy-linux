@@ -241,7 +241,7 @@ HTTP 401
 $ curl -sk -u admin:'<MDP_DASHBOARD>' -o /dev/null -w "HTTP %{http_code}\n" https://192.168.5.131/dashboard/
 HTTP 200
 
-$ curl -sk https://192.168.5.131/ | grep -i "démonstration"
+$ curl -sk -u admin:'<MDP_DASHBOARD>' https://192.168.5.131/ | grep -i "démonstration"
   <h1>Service de démonstration</h1>
 ```
 
