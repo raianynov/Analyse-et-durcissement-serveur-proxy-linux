@@ -168,10 +168,50 @@ http:
 ```
 
 4. Mise en place du backend de démonstration servi en loopback sur `127.0.0.1:8088`
-   par un service systemd cloisonné, afin de donner une fonction réelle au port 443 :
+   par un service systemd cloisonné, afin de donner une fonction réelle au port 443.
+
+Création des répertoires et de la page servie :
 ```bash
 sudo mkdir -p /var/www/demo /var/log/traefik
-# page index.html dans /var/www/demo
+sudo bash -c 'cat > /var/www/demo/index.html' << 'EOF'
+<!DOCTYPE html>
+<html lang="fr">
+<head><meta charset="utf-8"><title>Service de démo — Reverse proxy</title></head>
+<body style="font-family:sans-serif;max-width:40em;margin:4em auto;">
+  <h1>Service de démonstration</h1>
+  <p>Cette page est servie en HTTPS via le reverse proxy Traefik durci (TP4).</p>
+  <p>Terminaison TLS sur le port 443, routage par dynamic.yml.</p>
+</body>
+</html>
+EOF
+```
+
+Création de l'unité systemd `/etc/systemd/system/demo-backend.service`, qui sert la
+page en loopback via le serveur HTTP de Python, sous un compte non privilégié et avec
+un cloisonnement de base :
+```ini
+[Unit]
+Description=Backend de demonstration (page statique HTTPS via Traefik)
+After=network.target
+
+[Service]
+Type=simple
+User=nobody
+WorkingDirectory=/var/www/demo
+ExecStart=/usr/bin/python3 -m http.server 8088 --bind 127.0.0.1
+Restart=always
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Activation du backend et redémarrage de Traefik :
+```bash
+sudo systemctl daemon-reload
 sudo systemctl enable --now demo-backend.service
 sudo systemctl restart traefik
 ```
