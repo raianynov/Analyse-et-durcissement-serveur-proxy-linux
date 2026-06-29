@@ -456,30 +456,38 @@ $ getent group wheel
 wheel:x:10:admin,test,staiaire,admin-traefik
 ```
 
-Problèmes : `admin` et `backup` en `NOPASSWD: ALL` (root sans mot de passe) ;
-comptes de test (`test`), nominatif (`staiaire`) et hors périmètre (`admin-dns`,
-pas de service DNS) dotés d'un shell interactif et, pour certains, de sudo complet ;
-`backup` avec un shell interactif alors qu'un compte de sauvegarde n'en a pas besoin.
+Problèmes : `admin` et `backup` en `NOPASSWD: ALL` (root sans mot de passe) ; mot de
+passe d'`admin` inchangé depuis l'installation ; comptes de test (`test`), nominatif
+(`staiaire`) et hors périmètre (`admin-dns`, pas de service DNS) dotés d'un shell
+interactif et, pour certains, de sudo complet ; `backup` avec un shell interactif
+alors qu'un compte de sauvegarde n'en a pas besoin.
 
-**Mesures.** Traitées dans un ordre préservant l'accès administrateur : les comptes
-superflus d'abord, le retrait du `NOPASSWD` d'`admin` en dernier, après vérification
-de la connaissance de son mot de passe.
+**Mesures.** Traitées dans un ordre préservant l'accès administrateur : définition
+d'un mot de passe fort pour `admin`, puis traitement des comptes superflus, et enfin
+retrait du `NOPASSWD` d'`admin` en dernier, une fois son mot de passe connu et
+éprouvé.
 
-1. Verrouillage des comptes superflus et suppression de leur shell interactif
+1. Définition d'un mot de passe fort pour le compte d'administration `admin`, en
+   remplacement de celui défini à l'installation :
+```bash
+sudo passwd admin
+```
+
+2. Verrouillage des comptes superflus et suppression de leur shell interactif
    (verrouillage réversible) :
 ```bash
 for u in test staiaire admin-dns; do sudo passwd -l $u; sudo usermod -s /sbin/nologin $u; done
 sudo usermod -s /sbin/nologin backup
 ```
 
-2. Nettoyage du groupe `wheel` (retrait des comptes superflus, conservation des
+3. Nettoyage du groupe `wheel` (retrait des comptes superflus, conservation des
    administrateurs légitimes) :
 ```bash
 sudo gpasswd -d test wheel
 sudo gpasswd -d staiaire wheel
 ```
 
-3. Réécriture des règles sudo : suppression des lignes `test`, `staiaire` et du
+4. Réécriture des règles sudo : suppression des lignes `test`, `staiaire` et du
    `NOPASSWD` de `backup`, puis retrait du `NOPASSWD` d'`admin`. Édition validée par
    `visudo -c` à chaque étape :
 ```bash
@@ -520,8 +528,9 @@ $ getent group wheel
 wheel:x:10:admin,admin-traefik
 ```
 
-**État final.** Plus aucun privilège sudo sans mot de passe. Les comptes de test,
-nominatif et hors périmètre sont verrouillés et privés de shell interactif. Le
+**État final.** Le compte d'administration `admin` dispose d'un mot de passe fort
+renouvelé, et plus aucun privilège sudo ne s'exerce sans mot de passe. Les comptes de
+test, nominatif et hors périmètre sont verrouillés et privés de shell interactif. Le
 compte de sauvegarde conserve son existence mais perd sa session interactive. Le
 groupe `wheel` et les règles sudo sont réduits aux deux administrateurs légitimes
 (`admin`, `admin-traefik`). Les comptes superflus, verrouillés à ce stade, pourront
